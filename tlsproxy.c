@@ -1,13 +1,14 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include <getopt.h>
+#include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <getopt.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
+#include <unistd.h>
 
 #include <gnutls/gnutls.h>
 #include <gnutls/crypto.h>
@@ -23,8 +24,12 @@ char *cacertfile = NULL;
 char *hostname = NULL;
 int debug = 0;
 int insecure = 0;
+int nofork = 0;
+int server = 0;
 
 char *defaultport = "12345";
+
+volatile sig_atomic_t rxsigquit = 0;
 
 int
 bindtoaddress (char *addrport)
@@ -115,7 +120,7 @@ connecttoaddress (char *addrport)
       port = colon + 1;
     }
 
-  if (!hostname)
+  if (!hostname && !server)
     hostname = strdup (addr);
 
   s = getaddrinfo (addr, port, &hints, &result);
@@ -150,30 +155,34 @@ connecttoaddress (char *addrport)
 
 
 int
-runproxy (int plainfd)
+runproxy (int acceptfd)
 {
-  int cryptfd;
-  if ((cryptfd = connecttoaddress (connectaddr)) < 0)
+  int connectfd;
+  if ((connectfd = connecttoaddress (connectaddr)) < 0)
     {
-      fprintf (stderr, "Could not connect crypt listener\n");
-      close (plainfd);
+      fprintf (stderr, "Could not connect\n");
+      close (acceptfd);
       return -1;
     }
 
-  tlssession_t *session = newtlssession (FALSE, hostname);
+  tlssession_t *session = newtlssession (server, hostname);
   if (!session)
     {
       fprintf (stderr, "Could create TLS session\n");
-      close (cryptfd);
-      close (plainfd);
+      close (connectfd);
+      close (acceptfd);
       return -1;
     }
 
-  int ret = mainloop (cryptfd, plainfd, session);
+  int ret;
+  if (server)
+    ret = mainloop (acceptfd, connectfd, session);
+  else
+    ret = mainloop (connectfd, acceptfd, session);
 
   closetlssession (session);
-  close (cryptfd);
-  close (plainfd);
+  close (connectfd);
+  close (acceptfd);
 
   if (ret < 0)
     {
@@ -190,17 +199,52 @@ runlistener ()
   int listenfd;
   if ((listenfd = bindtoaddress (listenaddr)) < 0)
     {
-      fprintf (stderr, "Could not bind plaintext listener\n");
+      fprintf (stderr, "Could not bind listener\n");
       return -1;
     }
 
+  /*
+     if (!nofork)
+     daemon (FALSE, FALSE);
+   */
+
   int fd;
-  if ((fd = accept (listenfd, NULL, NULL)) < 0)
+  while (!rxsigquit)
     {
-      fprintf (stderr, "Accept failed\n");
-      return -1;
+      do
+	{
+	  if ((fd = accept (listenfd, NULL, NULL)) < 0)
+	    {
+	      if (errno != EINTR)
+		{
+		  fprintf (stderr, "Accept failed\n");
+		  return -1;
+		}
+	    }
+	}
+      while (fd < 0 && !rxsigquit);
+      if (rxsigquit)
+	break;
+      if (nofork < 2)
+	{
+	  int ret = runproxy (fd);
+	  if (ret < 0)
+	    return -1;
+	}
+      else
+	{
+	  int cpid = fork ();
+	  if (cpid == 0)
+	    {
+	      /* we're the child */
+	      runproxy (fd);
+	      exit (0);
+	    }
+	  else
+	    close (fd);
+	}
     }
-  return runproxy (fd);
+  return 0;
 }
 
 
@@ -211,6 +255,8 @@ usage ()
 Usage:\n\
      tlsproxy [OPTIONS]\n\
 \n\
+A TLS client or server proxy\n\
+\n\
 Options:\n\
      -c, --connect ADDRRESS    Connect to ADDRESS\n\
      -l, --listen ADDRESS      Listen on ADDRESS\n\
@@ -218,7 +264,12 @@ Options:\n\
      -C, --cert FILE           Use FILE as public key\n\
      -A, --cacert FILE         Use FILE as public CA cert file\n\
      -H, --hostname HOSTNAME   Use HOSTNAME to validate the CN of the peer\n\
-     -i, --insecure            Do not validated certificates\n\
+                               rather than hostname extracted from -C option\n\
+     -s, --server              Run the listen port encrypted rather than the\n\
+                               connect port\n\
+     -i, --insecure            Do not validate certificates\n\
+     -n, --nofork              Do not fork off (aids debugging); specify twice\n\
+                               to stop forking on accept as well\n\
      -d, --debug               Turn on debugging\n\
      -h, --help                Show this usage message\n\
 \n\
@@ -233,11 +284,13 @@ processoptions (int argc, char **argv)
       static struct option longopts[] = {
 	{"connect", required_argument, 0, 'c'},
 	{"listen", required_argument, 0, 'l'},
-	{"key", optional_argument, 0, 'K'},
-	{"cert", optional_argument, 0, 'C'},
-	{"cacert", optional_argument, 0, 'A'},
-	{"hostname", optional_argument, 0, 'H'},
+	{"key", required_argument, 0, 'K'},
+	{"cert", required_argument, 0, 'C'},
+	{"cacert", required_argument, 0, 'A'},
+	{"hostname", required_argument, 0, 'H'},
+	{"server", no_argument, 0, 's'},
 	{"insecure", no_argument, 0, 'i'},
+	{"nofork", no_argument, 0, 'n'},
 	{"debug", no_argument, 0, 'd'},
 	{"help", no_argument, 0, 'h'},
 	{0, 0, 0, 0}
@@ -245,7 +298,8 @@ processoptions (int argc, char **argv)
 
       int optind = 0;
 
-      int c = getopt_long (argc, argv, "c:l:K:C:A:H:idh", longopts, &optind);
+      int c =
+	getopt_long (argc, argv, "c:l:K:C:A:H:sindh", longopts, &optind);
       if (c == -1)
 	break;
 
@@ -278,8 +332,16 @@ processoptions (int argc, char **argv)
 	  hostname = strdup (optarg);
 	  break;
 
+	case 's':
+	  server = 1;
+	  break;
+
 	case 'i':
 	  insecure = 1;
+	  break;
+
+	case 'n':
+	  nofork++;
 	  break;
 
 	case 'd':
@@ -305,6 +367,20 @@ processoptions (int argc, char **argv)
 
   if (!certfile && keyfile)
     certfile = strdup (keyfile);
+}
+
+void
+handlesignal (int sig)
+{
+  switch (sig)
+    {
+    case SIGINT:
+    case SIGTERM:
+      rxsigquit++;
+      break;
+    default:
+      break;
+    }
 }
 
 void

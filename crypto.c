@@ -23,8 +23,6 @@
 
 #define MAX_CERTS 10
 
-static volatile sig_atomic_t rxsigquit = 0;
-
 typedef struct tlssession
 {
   gnutls_certificate_credentials_t creds;
@@ -263,20 +261,6 @@ crypto_init ()
   return 0;
 }
 
-void
-handlesignal (int sig)
-{
-  switch (sig)
-    {
-    case SIGINT:
-    case SIGTERM:
-      rxsigquit++;
-      break;
-    default:
-      break;
-    }
-}
-
 int
 mainloop (int cryptfd, int plainfd, tlssession_t * session)
 {
@@ -371,7 +355,6 @@ mainloop (int cryptfd, int plainfd, tlssession_t * session)
 
       if (FD_ISSET (plainfd, &readfds))
 	{
-	  fprintf (stderr, "[DEBUG] Read plain\n");
 	  /* we can read at least one byte */
 	  void *addr = NULL;
 	  /* get a span of characters to write to the
@@ -407,7 +390,6 @@ mainloop (int cryptfd, int plainfd, tlssession_t * session)
 
       if (FD_ISSET (plainfd, &writefds))
 	{
-	  fprintf (stderr, "[DEBUG] Write plain\n");
 	  /* we can write at least one byte */
 	  void *addr = NULL;
 	  /* get a span of characters to read from the buffer
@@ -436,7 +418,6 @@ mainloop (int cryptfd, int plainfd, tlssession_t * session)
 
       if (FD_ISSET (cryptfd, &readfds) || buffered)
 	{
-	  fprintf (stderr, "[DEBUG] Read crypt\n");
 	  /* we can read at least one byte */
 	  void *addr = NULL;
 	  /* get a span of characters to write to the
@@ -477,7 +458,6 @@ mainloop (int cryptfd, int plainfd, tlssession_t * session)
 
       if (FD_ISSET (cryptfd, &writefds))
 	{
-	  fprintf (stderr, "[DEBUG] Write crypt\n");
 	  /* we can write at least one byte */
 	  void *addr = NULL;
 	  /* get a span of characters to read from the buffer
@@ -521,11 +501,9 @@ mainloop (int cryptfd, int plainfd, tlssession_t * session)
     }
 
   ret = 0;
-  fprintf (stderr, "[DEBUG] Normal exit\n");
   goto freereturn;
 
 error:
-  fprintf (stderr, "[DEBUG] Error exit\n");
   ret = -1;
 
 freereturn:

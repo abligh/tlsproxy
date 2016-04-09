@@ -12,5 +12,9 @@ extern char *cacertfile;
 extern char *hostname;
 extern int debug;
 extern int insecure;
+extern int nofork;
+extern int server;
+
+extern volatile sig_atomic_t rxsigquit;
 
 #endif
