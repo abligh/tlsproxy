@@ -1,3 +1,5 @@
+/*
+
 The MIT License (MIT)
 
 Copyright (c) 2016 Wrymouth Innovation Ltd
@@ -19,3 +21,23 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
 OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+*/
+
+#ifndef __TLSPROXY_CRYPTO_GNUTLS_H
+#define __TLSPROXY_CRYPTO_GNUTLS_H
+
+int crypto_init ();
+
+typedef struct tlssession tlssession_t;
+tlssession_t *tlssession_new (int isserver,
+			      char *keyfile, char *certfile, char *cacertfile,
+			      char *hostname, int insecure, int debug,
+			      int (*quitfn) (void *opaque),
+			      int (*erroutfn) (void *opaque,
+					       const char *format,
+					       va_list ap), void *opaque);
+void tlssession_close (tlssession_t * s);
+int tlssession_mainloop (int cryptfd, int plainfd, tlssession_t * session);
+
+#endif

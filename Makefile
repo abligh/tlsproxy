@@ -2,7 +2,7 @@ OUTPUT = ./build
 TARGET = tlsproxy
 
 # Objects, relative to OUTPUT
-OBJS = tlsproxy.o crypto.o buffer.o
+OBJS = tlsproxy.o crypto-gnutls.o buffer.o
 
 DEBUG = -g -O0
 CFLAGS = -Wall -Werror -c $(DEBUG) -I.

@@ -8,7 +8,7 @@ got it right.
 
 To that end, it's been divided up as follows:
 
-* `crypto.c` does all the crypto, and `mainloop()` does the hard work.
+* `crypto.c` does all the crypto, and `tlssession_mainloop()` does the hard work.
 * `buffer.c` provides ring buffer support.
 * `tlsproxy.c` deals with command line options and connecting sockets.
 

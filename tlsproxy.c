@@ -1,3 +1,29 @@
+/*
+
+The MIT License (MIT)
+
+Copyright (c) 2016 Wrymouth Innovation Ltd
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+*/
+
 #define _GNU_SOURCE
 #include <errno.h>
 #include <getopt.h>
@@ -10,28 +36,24 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <gnutls/gnutls.h>
-#include <gnutls/crypto.h>
+#include "crypto-gnutls.h"
 
-#include "tlsproxy.h"
-#include "crypto.h"
+static char *connectaddr = NULL;
+static char *listenaddr = NULL;
+static char *keyfile = NULL;
+static char *certfile = NULL;
+static char *cacertfile = NULL;
+static char *hostname = NULL;
+static int debug = 0;
+static int insecure = 0;
+static int nofork = 0;
+static int server = 0;
 
-char *connectaddr = NULL;
-char *listenaddr = NULL;
-char *keyfile = NULL;
-char *certfile = NULL;
-char *cacertfile = NULL;
-char *hostname = NULL;
-int debug = 0;
-int insecure = 0;
-int nofork = 0;
-int server = 0;
+static char *defaultport = "12345";
 
-char *defaultport = "12345";
+static volatile sig_atomic_t rxsigquit = 0;
 
-volatile sig_atomic_t rxsigquit = 0;
-
-int
+static int
 bindtoaddress (char *addrport)
 {
   struct addrinfo hints;
@@ -98,7 +120,7 @@ bindtoaddress (char *addrport)
   return fd;
 }
 
-int
+static int
 connecttoaddress (char *addrport)
 {
   struct addrinfo hints;
@@ -153,8 +175,13 @@ connecttoaddress (char *addrport)
   return fd;
 }
 
+static int
+quitfn (void *opaque)
+{
+  return rxsigquit;
+}
 
-int
+static int
 runproxy (int acceptfd)
 {
   int connectfd;
@@ -165,7 +192,9 @@ runproxy (int acceptfd)
       return -1;
     }
 
-  tlssession_t *session = newtlssession (server, hostname);
+  tlssession_t *session =
+    tlssession_new (server, hostname, keyfile, certfile, cacertfile, insecure,
+		    debug, quitfn, NULL, NULL);
   if (!session)
     {
       fprintf (stderr, "Could create TLS session\n");
@@ -176,11 +205,11 @@ runproxy (int acceptfd)
 
   int ret;
   if (server)
-    ret = mainloop (acceptfd, connectfd, session);
+    ret = tlssession_mainloop (acceptfd, connectfd, session);
   else
-    ret = mainloop (connectfd, acceptfd, session);
+    ret = tlssession_mainloop (connectfd, acceptfd, session);
 
-  closetlssession (session);
+  tlssession_close (session);
   close (connectfd);
   close (acceptfd);
 
@@ -192,8 +221,7 @@ runproxy (int acceptfd)
   return 0;
 }
 
-
-int
+static int
 runlistener ()
 {
   int listenfd;
@@ -247,8 +275,7 @@ runlistener ()
   return 0;
 }
 
-
-void
+static void
 usage ()
 {
   fprintf (stderr, "tlsproxy\n\n\
@@ -276,7 +303,7 @@ Options:\n\
 \n");
 }
 
-void
+static void
 processoptions (int argc, char **argv)
 {
   while (1)
@@ -369,7 +396,7 @@ processoptions (int argc, char **argv)
     certfile = strdup (keyfile);
 }
 
-void
+static void
 handlesignal (int sig)
 {
   switch (sig)
@@ -383,7 +410,7 @@ handlesignal (int sig)
     }
 }
 
-void
+static void
 setsignalmasks ()
 {
   struct sigaction sa;
