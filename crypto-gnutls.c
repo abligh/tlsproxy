@@ -188,8 +188,7 @@ verify_certificate_callback (gnutls_session_t session)
 
   gnutls_x509_crt_deinit (cert);
 
-  if (s->debug)
-    debugout (s, "Peer passed certificate verification\n");
+  debugout (s, "Peer passed certificate verification\n");
 
   /* notify gnutls to continue handshake normally */
   return 0;
@@ -219,15 +218,7 @@ tlssession_new (int isserver,
   if (hostname)
     s->hostname = strdup (hostname);
 
-  s->debug = s->debug;
-
-  if (s->debug)
-    {
-      gnutls_global_set_log_level (10);
-      /*
-         gnutls_global_set_log_function (...);
-       */
-    }
+  s->debug = debug;
 
   if (gnutls_certificate_allocate_credentials (&s->creds) < 0)
     {
@@ -255,6 +246,9 @@ tlssession_new (int isserver,
 					       GNUTLS_VERIFY_ALLOW_X509_V1_CA_CRT);
 	}
     }
+
+  if (keyfile && !certfile)
+    certfile = keyfile;
 
   if (certfile != NULL && keyfile != NULL)
     {
