@@ -193,7 +193,7 @@ runproxy (int acceptfd)
     }
 
   tlssession_t *session =
-    tlssession_new (server, hostname, keyfile, certfile, cacertfile, insecure,
+    tlssession_new (server, keyfile, certfile, cacertfile, hostname, insecure,
 		    debug, quitfn, NULL, NULL);
   if (!session)
     {

@@ -26,6 +26,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 #define _GNU_SOURCE
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <string.h>
 #include <stdint.h>
@@ -104,6 +105,15 @@ debugout (tlssession_t * s, const char *format, ...)
     ret = s->erroutfn (s->opaque, format, ap);
   va_end (ap);
   return ret;
+}
+
+static int
+socksetnonblock (int fd, int nb)
+{
+  int sf = fcntl (fd, F_GETFL, 0);
+  if (sf == -1)
+    return -1;
+  return fcntl (fd, F_SETFL, nb ? (sf | O_NONBLOCK) : (sf & ~O_NONBLOCK));
 }
 
 /* From (public domain) example file in GNUTLS
@@ -259,8 +269,8 @@ tlssession_new (int isserver,
       if (ret < 0)
 	{
 	  errout (s,
-		  "Error loading certificate or key file: %s\n",
-		  gnutls_strerror (ret));
+		  "Error loading certificate or key file (%s, %s): %s\n",
+		  certfile, keyfile, gnutls_strerror (ret));
 	  goto error;
 	}
     }
@@ -343,6 +353,12 @@ tlssession_mainloop (int cryptfd, int plainfd, tlssession_t * s)
   buffer_t *plainToCrypt = bufNew (BUF_SIZE, BUF_HWM);
   buffer_t *cryptToPlain = bufNew (BUF_SIZE, BUF_HWM);
 
+  if (socksetnonblock (cryptfd, 0) < 0)
+    {
+      errout (s, "Could not turn on blocking: %m");
+      goto error;
+    }
+
   /* set it up to work with our FD */
   gnutls_transport_set_ptr (s->session,
 			    (gnutls_transport_ptr_t) (intptr_t) cryptfd);
@@ -353,6 +369,18 @@ tlssession_mainloop (int cryptfd, int plainfd, tlssession_t * s)
   if (ret < 0)
     {
       errout (s, "TLS handshake failed: %s\n", gnutls_strerror (ret));
+      goto error;
+    }
+
+  if (socksetnonblock (cryptfd, 1) < 0)
+    {
+      errout (s, "Could not turn on non-blocking on crypt FD: %m");
+      goto error;
+    }
+
+  if (socksetnonblock (plainfd, 1) < 0)
+    {
+      errout (s, "Could not turn on non-blocking on plain FD: %m");
       goto error;
     }
 
