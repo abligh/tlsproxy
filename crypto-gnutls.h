@@ -27,7 +27,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 #ifndef __TLSPROXY_CRYPTO_GNUTLS_H
 #define __TLSPROXY_CRYPTO_GNUTLS_H
 
-int crypto_init ();
+int tlssession_init ();
 
 typedef struct tlssession tlssession_t;
 tlssession_t *tlssession_new (int isserver,

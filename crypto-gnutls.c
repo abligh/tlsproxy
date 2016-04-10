@@ -323,7 +323,7 @@ tlssession_close (tlssession_t * s)
 }
 
 int
-crypto_init ()
+tlssession_init ()
 {
   return gnutls_global_init ();
 }

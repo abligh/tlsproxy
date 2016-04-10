@@ -435,7 +435,7 @@ main (int argc, char **argv)
 
   setsignalmasks ();
 
-  if (crypto_init ())
+  if (tlssession_init ())
     exit (1);
 
   runlistener ();
