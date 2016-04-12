@@ -51,6 +51,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 #define FALSE 0
 #define TRUE 1
 
+#define PRIORITY "NORMAL:-VERS-TLS-ALL:+VERS-TLS1.2"
+
 typedef struct tlssession
 {
   gnutls_certificate_credentials_t creds;
@@ -299,6 +301,18 @@ tlssession_new (int isserver,
 	      gnutls_strerror (ret));
       goto error;
     }
+
+  const char *errpos = NULL;
+  ret = gnutls_priority_set_direct(s->session, PRIORITY, &errpos);
+  if (ret < 0)
+    {
+      errout (s, "Cannot set GNUTLS session priority: %s\n",
+	      gnutls_strerror (ret));
+      goto error;
+    }
+
+  gnutls_session_set_ptr (s->session, (void *) s);
+
   ret = gnutls_credentials_set (s->session, GNUTLS_CRD_CERTIFICATE, s->creds);
   if (ret < 0)
     {
