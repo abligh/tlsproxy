@@ -293,6 +293,17 @@ tlssession_new (int isserver,
     }
 
   gnutls_session_set_ptr (s->session, (void *) s);
+  if (s->hostname && *s->hostname)
+    {
+      ret = gnutls_server_name_set (s->session, GNUTLS_NAME_DNS, s->hostname,
+				    strlen (s->hostname));
+      if (ret < 0)
+        {
+          errout (s, "Cannot set server name: %s\n",
+	          gnutls_strerror (ret));
+          goto error;
+        }
+    }
 
   ret = gnutls_set_default_priority (s->session);
   if (ret < 0)
