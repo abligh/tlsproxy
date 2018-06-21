@@ -127,78 +127,42 @@ static int
 verify_certificate_callback (gnutls_session_t session)
 {
   unsigned int status;
-  const gnutls_datum_t *cert_list;
-  unsigned int cert_list_size;
   int ret;
-  gnutls_x509_crt_t cert;
   tlssession_t *s;
 
   /* read session pointer */
   s = (tlssession_t *) gnutls_session_get_ptr (session);
 
+  if (gnutls_certificate_type_get (session) != GNUTLS_CRT_X509)
+    return GNUTLS_E_CERTIFICATE_ERROR;
+
   /* This verification function uses the trusted CAs in the credentials
    * structure. So you must have installed one or more CA certificates.
    */
-  ret = gnutls_certificate_verify_peers2 (session, &status);
+  if (s->hostname && *s->hostname)
+    ret = gnutls_certificate_verify_peers3 (session, s->hostname, &status);
+  else
+    ret = gnutls_certificate_verify_peers2 (session, &status);
+
   if (ret < 0)
     {
       debugout (s, "Could not verfify peer certificate due to an error\n");
       return GNUTLS_E_CERTIFICATE_ERROR;
     }
 
-  if (status & GNUTLS_CERT_INVALID)
-    debugout (s, "The certificate is not trusted.\n");
-
-  if (status & GNUTLS_CERT_SIGNER_NOT_FOUND)
-    debugout (s, "The certificate hasn't got a known issuer.\n");
-
-  if (status & GNUTLS_CERT_REVOKED)
-    debugout (s, "The certificate has been revoked.\n");
-
-  if (status & GNUTLS_CERT_EXPIRED)
-    debugout (s, "The certificate has expired\n");
-
-  if (status & GNUTLS_CERT_NOT_ACTIVATED)
-    debugout (s, "The certificate is not yet activated\n");
-
   if (status)
-    return GNUTLS_E_CERTIFICATE_ERROR;
-
-  if (gnutls_certificate_type_get (session) != GNUTLS_CRT_X509)
-    return GNUTLS_E_CERTIFICATE_ERROR;
-
-  if (gnutls_x509_crt_init (&cert) < 0)
     {
-      debugout (s, "error in initialization\n");
+      gnutls_datum_t txt;
+      ret = gnutls_certificate_verification_status_print(status, GNUTLS_CRT_X509,
+							 &txt, 0);
+      if (ret >= 0)
+        {
+          debugout (s, "verification error: %s\n", txt.data);
+          gnutls_free(txt.data);
+        }
+
       return GNUTLS_E_CERTIFICATE_ERROR;
     }
-
-  cert_list = gnutls_certificate_get_peers (session, &cert_list_size);
-  if (cert_list == NULL)
-    {
-      debugout (s, "No certificate was found!\n");
-      return GNUTLS_E_CERTIFICATE_ERROR;
-    }
-
-  /* check only the first certificate - seems to be what curl does */
-  if (gnutls_x509_crt_import (cert, &cert_list[0], GNUTLS_X509_FMT_DER) < 0)
-    {
-      debugout (s, "error parsing certificate\n");
-      return GNUTLS_E_CERTIFICATE_ERROR;
-    }
-
-  if (s->hostname && *s->hostname)
-    {
-      if (!gnutls_x509_crt_check_hostname (cert, s->hostname))
-	{
-	  debugout (s,
-		    "The certificate's owner does not match hostname '%s'\n",
-		    s->hostname);
-	  return GNUTLS_E_CERTIFICATE_ERROR;
-	}
-    }
-
-  gnutls_x509_crt_deinit (cert);
 
   debugout (s, "Peer passed certificate verification\n");
 
@@ -293,6 +257,17 @@ tlssession_new (int isserver,
     }
 
   gnutls_session_set_ptr (s->session, (void *) s);
+  if (s->hostname && *s->hostname)
+    {
+      ret = gnutls_server_name_set (s->session, GNUTLS_NAME_DNS, s->hostname,
+				    strlen (s->hostname));
+      if (ret < 0)
+        {
+          errout (s, "Cannot set server name: %s\n",
+	          gnutls_strerror (ret));
+          goto error;
+        }
+    }
 
   ret = gnutls_set_default_priority (s->session);
   if (ret < 0)
